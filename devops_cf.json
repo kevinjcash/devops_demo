@@ -1,0 +1,521 @@
+{
+    "AWSTemplateFormatVersion": "2010-09-09",
+    "Description": "A VPC environment with a private and a public subnet",
+    "Parameters": {
+        "envPrefix": {
+            "Description": "Environment name prefix.",
+            "Type": "String",
+            "Default": "Test"
+        },
+        "vpcCidr": {
+            "Description": "VPC CIDR block.",
+            "Type": "String",
+            "Default": "10.4.0.0/16",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x."
+        },
+        "publicSubnetCidr": {
+            "Description": "Public subnet CIDR block.",
+            "Type": "String",
+            "Default": "10.4.0.0/24",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+        },
+        "privateSubnetCidr": {
+            "Description": "Private subnet CIDR block.",
+            "Type": "String",
+            "Default": "10.4.1.0/24",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "Must be a valid IP CIDR range of the form x.x.x.x/x and subnet of VPC."
+        },
+        "publicSubnetAZ": {
+            "Description": "Public Subnet availability zone.",
+            "Type": "AWS::EC2::AvailabilityZone::Name"
+        },
+        "privateSubnetAZ": {
+            "Description": "Private Subnet availability zone.",
+            "Type": "AWS::EC2::AvailabilityZone::Name"
+        },
+        "InstanceType": {
+            "Description": "WebServer EC2 instance type",
+            "Type": "String",
+            "Default": "t2.small",
+            "AllowedValues": [
+                "t2.micro",
+                "t2.small",
+                "t2.medium",
+                "m3.medium",
+                "m3.large"
+            ],
+            "ConstraintDescription": "must be a valid EC2 instance type."
+        },
+        "KeyName": {
+            "Description": "Name of an existing EC2 KeyPair to enable SSH access to the instance",
+            "Type": "AWS::EC2::KeyPair::KeyName",
+            "ConstraintDescription": "must be the name of an existing EC2 KeyPair."
+        },
+        "SSHLocation": {
+            "Description": " The IP address range that can be used to SSH to the EC2 instances",
+            "Type": "String",
+            "MinLength": "9",
+            "MaxLength": "18",
+            "Default": "0.0.0.0/0",
+            "AllowedPattern": "(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})\\.(\\d{1,3})/(\\d{1,2})",
+            "ConstraintDescription": "must be a valid IP CIDR range of the form x.x.x.x/x."
+        }
+    },
+    "Mappings": {
+        "AWSRegionToAMI" : {
+            "us-east-1" : {"64" : "ami-60b6c60a"},
+            "us-west-1" : {"64" : "ami-d5ea86b5"},
+            "us-west-2" : {"64" : "ami-c07168a1"}
+        },
+        "NatRegionMap" : {
+            "us-east-1"      : { "AMI" : "ami-184dc970" },
+            "us-west-1"      : { "AMI" : "ami-a98396ec" },
+            "us-west-2"      : { "AMI" : "ami-290f4119" },
+            "eu-west-1"      : { "AMI" : "ami-14913f63" },
+            "eu-central-1"   : { "AMI" : "ami-ae380eb3" },
+            "sa-east-1"      : { "AMI" : "ami-8122969c" },
+            "ap-southeast-1" : { "AMI" : "ami-6aa38238" },
+            "ap-southeast-2" : { "AMI" : "ami-893f53b3" },
+            "ap-northeast-1" : { "AMI" : "ami-27d6e626" }
+        }
+    },
+    "Resources": {
+        "vpc": {
+            "Type": "AWS::EC2::VPC",
+            "Properties": {
+                "CidrBlock": {"Ref": "vpcCidr"},
+                "InstanceTenancy": "default",
+                "EnableDnsSupport": "true",
+                "EnableDnsHostnames": "true",
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "VPC"] ] }
+                }]
+            }
+        },
+        "publicSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "DependsOn": [
+                "vpc",
+                "attachGateway"
+            ],
+            "Properties": {
+                "CidrBlock": {"Ref": "publicSubnetCidr"},
+                "AvailabilityZone": {"Ref": "publicSubnetAZ"},
+                "VpcId": {"Ref": "vpc"},
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "Subnet-Public"] ] }
+                }]
+            }
+        },
+        "privateSubnet": {
+            "Type": "AWS::EC2::Subnet",
+            "DependsOn": [
+                "vpc",
+                "attachGateway"
+            ],
+            "Properties": {
+                "CidrBlock": {"Ref": "privateSubnetCidr"},
+                "AvailabilityZone": {"Ref": "privateSubnetAZ"},
+                "VpcId": {"Ref": "vpc"},
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "Subnet-Private"] ] }
+                }]
+            }
+        },
+        "inetGateway": {
+            "Type": "AWS::EC2::InternetGateway",
+            "DependsOn": [
+                "vpc"
+            ],
+            "Properties": {
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "InternetGateway"] ] }
+                }]
+            }
+        },
+        "attachGateway": {
+            "Type": "AWS::EC2::VPCGatewayAttachment",
+            "DependsOn": [
+                "vpc",
+                "inetGateway"
+            ],
+            "Properties": {
+                "VpcId": {"Ref": "vpc"},
+                "InternetGatewayId": {"Ref": "inetGateway"}
+            }
+        },
+        "publicRouteTable": {
+            "Type": "AWS::EC2::RouteTable",
+            "DependsOn": [
+                "vpc",
+                "attachGateway"
+            ],
+            "Properties": {
+                "VpcId": {"Ref": "vpc"},
+                "Tags": [{
+                    "Key": "Name",
+                    "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "RTB-Public"] ] }
+                }]
+            }
+        },
+        "routePublic": {
+            "Type": "AWS::EC2::Route",
+            "DependsOn": "attachGateway",
+            "Properties": {
+                "DestinationCidrBlock": "0.0.0.0/0",
+                "RouteTableId": {"Ref": "publicRouteTable"},
+                "GatewayId": {"Ref": "inetGateway"}
+            }
+        },
+        "subnetRouteTableAssociationPublic": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "DependsOn": [
+                "publicRouteTable",
+                "publicSubnet"
+            ],
+            "Properties": {
+                "RouteTableId": {"Ref": "publicRouteTable"},
+                "SubnetId": {"Ref": "publicSubnet"}
+            }
+        },
+
+        "subnetRouteTableAssociationPrivate": {
+            "Type": "AWS::EC2::SubnetRouteTableAssociation",
+            "DependsOn": [
+                "publicRouteTable",
+                "privateSubnet"
+            ],
+            "Properties": {
+                "RouteTableId": {"Ref": "privateRouteTable"},
+                "SubnetId": {"Ref": "privateSubnet"}
+            }
+        },
+        "NatSecurityGroup" : {
+            "DependsOn" : ["vpc"],
+            "Type" : "AWS::EC2::SecurityGroup",
+            "Properties" : {
+                "GroupDescription" : "NAT Security Group",
+                "VpcId" : { "Ref" : "vpc" },
+                "SecurityGroupIngress" : [
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "22",
+                        "ToPort" : "22",
+                        "CidrIp" : { "Ref" : "SSHLocation" }
+                    },
+                    {
+                        "IpProtocol" : "tcp",
+                        "FromPort" : "5000",
+                        "ToPort" : "5000",
+                        "CidrIp" : { "Ref" : "vpcCidr" }
+                    }
+                ],
+                "Tags" : [
+                    { "Key" : "Name", "Value" : "NAT Security Group" }
+                ]
+            }
+        },
+        "NatSecurityGroupIngress1" : {
+            "DependsOn" : ["NatSecurityGroup"],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "NatSecurityGroup" },
+                "IpProtocol": "icmp",
+                "FromPort": "-1",
+                "ToPort": "-1",
+                "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+            }
+        },
+        "NatSecurityGroupIngress22" : {
+            "DependsOn" : ["NatSecurityGroup"],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "NatSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "22",
+                "ToPort": "22",
+                "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+            }
+        },
+        "NatSecurityGroupIngress5000" : {
+            "DependsOn" : ["NatSecurityGroup"],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "NatSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "5000",
+                "ToPort": "5000",
+                "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+            }
+        },
+        "NatSecurityGroupIngress80" : {
+            "DependsOn" : ["NatSecurityGroup"],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "NatSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "80",
+                "ToPort": "80",
+                "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+            }
+        },
+        "NatSecurityGroupIngress443" : {
+            "DependsOn" : ["NatSecurityGroup"],
+            "Type": "AWS::EC2::SecurityGroupIngress",
+            "Properties": {
+                "GroupId": { "Ref": "NatSecurityGroup" },
+                "IpProtocol": "tcp",
+                "FromPort": "443",
+                "ToPort": "443",
+                "SourceSecurityGroupId": { "Ref": "NatSecurityGroup" }
+            }
+        },
+        "privateRouteTable" : {
+            "DependsOn" : ["vpc"],
+            "Type" : "AWS::EC2::RouteTable",
+            "Properties" : {
+                "VpcId" : { "Ref" : "vpc" },
+                "Tags" : [
+                    {"Key": "Name", "Value": {"Fn::Join": ["-", [{"Ref": "envPrefix"}, "RTB-Private"]]}},
+                    { "Key" : "Application", "Value" : { "Ref" : "AWS::StackName" } },
+                    { "Key" : "Network", "Value" : "Private" }
+                ]
+            }
+        },
+        "privateRoute" : {
+            "DependsOn" : ["privateRouteTable", "NAT"],
+            "Type" : "AWS::EC2::Route",
+            "Properties" : {
+                "RouteTableId" : { "Ref" : "privateRouteTable" },
+                "DestinationCidrBlock" : "0.0.0.0/0",
+                "InstanceId" : { "Ref" : "NAT" }
+            }
+        },
+
+        "InstanceSecurityGroup": {
+            "Type": "AWS::EC2::SecurityGroup",
+            "Properties": {
+                "VpcId": {"Ref": "vpc"},
+                "GroupDescription": "Enable SSH access via port 22",
+                "SecurityGroupIngress": [
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {"Ref": "SSHLocation"}
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "22",
+                        "ToPort": "22",
+                        "CidrIp": {"Ref": "vpcCidr"}
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "80",
+                        "ToPort": "80",
+                        "CidrIp": "0.0.0.0/0"
+                    },
+                    {
+                        "IpProtocol": "tcp",
+                        "FromPort": "5000",
+                        "ToPort": "5000",
+                        "CidrIp": "0.0.0.0/0"
+                    }
+                ]
+            }
+        },
+        "NAT" : {
+            "DependsOn" : ["publicSubnet", "NatSecurityGroup"],
+            "Type" : "AWS::EC2::Instance",
+            "Properties" : {
+                "InstanceType" : "t2.micro",
+                "KeyName"  : { "Ref" : "KeyName" },
+                "SourceDestCheck" : "false",
+                "ImageId" : { "Fn::FindInMap" : [ "NatRegionMap", { "Ref" : "AWS::Region" }, "AMI" ]},
+                "NetworkInterfaces" : [{
+                    "GroupSet" : [
+                        { "Ref" : "NatSecurityGroup" },
+                        { "Ref" : "InstanceSecurityGroup"}
+                    ],
+                    "AssociatePublicIpAddress" : "true",
+                    "DeviceIndex"              : "0",
+                    "DeleteOnTermination"      : "true",
+                    "SubnetId"                 : { "Ref" : "publicSubnet" }
+                }],
+                "Tags" : [
+                    { "Key" : "Name", "Value" : "NAT" }
+                ],
+                "UserData" : { "Fn::Base64" : { "Fn::Join" : ["", [
+                    "#!/bin/bash\n",
+                    "yum update -y && yum install -y yum-cron && chkconfig yum-cron on"
+                ]]}}
+            }
+        },
+        "LoadBalancer" : {
+            "Type" : "AWS::ElasticLoadBalancing::LoadBalancer",
+            "DependsOn" : ["attachGateway"],
+            "Properties" : {
+                "Subnets": [{"Ref": "publicSubnet"}],
+                "SecurityGroups": [
+                    {"Ref": "InstanceSecurityGroup"},
+                    {"Ref": "NatSecurityGroup"}
+                ],
+                "Instances" : [
+                    { "Ref" : "ServiceAInstance" }
+                ],
+                "Listeners" : [ {
+                    "LoadBalancerPort" : "80",
+                    "InstancePort" : "80",
+                    "Protocol" : "HTTP"
+                } ],
+                "HealthCheck" : {
+                    "Target" : "HTTP:80/health",
+                    "HealthyThreshold" : "3",
+                    "UnhealthyThreshold" : "5",
+                    "Interval" : "30",
+                    "Timeout" : "5"
+                }
+            }
+        },
+        "ServiceAInstance": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "attachGateway",
+            "Metadata": {
+                "Comment": "Public facing service",
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "packages": {
+                            "yum": {
+                                "docker": []
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "docker": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        },
+                        "files" : {
+                            "/etc/sysconfig/docker" : {
+                              "source" : "https://s3-us-west-2.amazonaws.com/kevinjcashstartupfiles/docker",
+                              "mode" : "00755",
+                              "owner" : "root",
+                              "group" : "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {"Fn::FindInMap": ["AWSRegionToAMI", {"Ref" : "AWS::Region"}, "64"]},
+                "InstanceType": {"Ref": "InstanceType"},
+                "KeyName": {"Ref": "KeyName"},
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackId"}},
+                    {"Key": "Name", "Value": "ServiceA"}
+                ],
+                "NetworkInterfaces": [{
+                    "GroupSet": [
+                        {"Ref": "InstanceSecurityGroup"},
+                        {"Ref": "NatSecurityGroup"}
+                    ],
+                    "AssociatePublicIpAddress": "true",
+                    "DeviceIndex": "0",
+                    "DeleteOnTermination": "true",
+                    "SubnetId": {"Ref": "publicSubnet"}
+                }],
+                "UserData": {
+                    "Fn::Base64": {"Fn::Join": ["", [
+                        "#!/bin/bash -xe\n",
+                        "/opt/aws/bin/cfn-init -v ",
+                        " --stack ", { "Ref" : "AWS::StackName" },
+                        " --resource ServiceAInstance ",
+                        " --region ", { "Ref" : "AWS::Region" }, "\n",
+                        "usermod -aG docker ec2-user\n",
+                        "service docker restart\n",
+                        "rm -rf /var/lib/docker\n",
+                        "docker pull kevinjcash/servicea\n",
+                        "docker run -d --name service_a -p 80:80 -e 'b_instance=",
+                        {"Fn::GetAtt" : ["ServiceBInstance", "PrivateIp"]},
+                        "' kevinjcash/servicea", "\n"
+                    ]]}
+                }
+            }
+        },
+        "ServiceBInstance": {
+            "Type": "AWS::EC2::Instance",
+            "DependsOn": "attachGateway",
+            "Metadata": {
+                "Comment": "Public facing service",
+                "AWS::CloudFormation::Init": {
+                    "config": {
+                        "packages": {
+                            "yum": {
+                                "docker": []
+                            }
+                        },
+                        "services": {
+                            "sysvinit": {
+                                "docker": {
+                                    "enabled": "true",
+                                    "ensureRunning": "true"
+                                }
+                            }
+                        },
+                        "files" : {
+                            "/etc/sysconfig/docker" : {
+                              "source" : "https://s3-us-west-2.amazonaws.com/kevinjcashstartupfiles/docker",
+                              "mode" : "00755",
+                              "owner" : "root",
+                              "group" : "root"
+                            }
+                        }
+                    }
+                }
+            },
+            "Properties": {
+                "ImageId": {"Fn::FindInMap": ["AWSRegionToAMI", {"Ref" : "AWS::Region"}, "64"]},
+                "InstanceType": {"Ref": "InstanceType"},
+                "KeyName": {"Ref": "KeyName"},
+                "Tags": [
+                    {"Key": "Application", "Value": {"Ref": "AWS::StackId"}},
+                    {"Key": "Name", "Value": "ServiceB"}
+                ],
+                "NetworkInterfaces": [{
+                    "GroupSet": [
+                        {"Ref": "InstanceSecurityGroup"},
+                        {"Ref": "NatSecurityGroup"}
+                    ],
+                    "AssociatePublicIpAddress": "false",
+                    "DeviceIndex": "0",
+                    "DeleteOnTermination": "true",
+                    "SubnetId": {"Ref": "privateSubnet"}
+                }],
+                "UserData": {
+                    "Fn::Base64": {"Fn::Join": ["", [
+                        "#!/bin/bash -xe\n",
+                        "/opt/aws/bin/cfn-init -v ",
+                        " --stack ", { "Ref" : "AWS::StackName" },
+                        " --resource ServiceBInstance ",
+                        " --region ", { "Ref" : "AWS::Region" }, "\n",
+                        "usermod -aG docker ec2-user\n",
+                        "service docker restart\n",
+                        "rm -rf /var/lib/docker\n",
+                        "docker pull kevinjcash/serviceb\n",
+                        "docker run -d --name service_b -p 80:80 kevinjcash/serviceb\n"
+                    ]]}
+                }
+            }
+        }
+    }
+}
