@@ -4,7 +4,7 @@ There are 3 github repos for this demo.
 
   * [Service A](https://github.com/kevinjcash/serviceA)
   * [Service B](https://github.com/kevinjcash/serviceB)
-  * [Template](https://github.com/kevinjcash/microservicesTemplate)
+  * [Template](https://github.com/kevinjcash/devops_demo)
 
 You can take the cloudformation template from the Template repo and deploy it in your AWS environment. It will pull the images from Dockerhub. The template assumes you already have a keypair created; it will create everything else. The template will pull a file from my s3 bucket, which should be available to everyone.
 
